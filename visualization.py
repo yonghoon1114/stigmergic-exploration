@@ -2,44 +2,66 @@ import numpy as np
 import matplotlib.pyplot as plt
 import random
 from agents import Agent
+import time
 
-WIDTH = 50
-HEIGHT = 50
-NUM_AGENTS = 10
-STEPS = 100
+WIDTH = 100
+HEIGHT = 100
+STEPS = 200
+DECAY = 1
+N = 10   # agent count 고정
 
-potential = np.zeros((HEIGHT, WIDTH))
+def entropy(potential):
+    p = potential.flatten()
+    p = p / np.sum(p)
+    return -np.sum(p * np.log(p + 1e-10))
 
-agents = [
-    Agent(
-        random.randint(0, HEIGHT - 1),
-        random.randint(0, WIDTH - 1),
-        HEIGHT,
-        WIDTH
-    )
-    for _ in range(NUM_AGENTS)
-]
+def run_sim(alpha, seed=0):
 
-fig, ax = plt.subplots()
+    random.seed(seed)
+    np.random.seed(seed)
 
-for step in range(STEPS):
-    ax.clear()
+    potential = np.zeros((HEIGHT, WIDTH)) + 1e-6
 
-    for agent in agents:
-        agent.step(potential)
+    agents = [
+        Agent(
+            random.randint(0, HEIGHT - 1),
+            random.randint(0, WIDTH - 1),
+            HEIGHT,
+            WIDTH,
+            alpha
+        )
+        for _ in range(N)
+    ]
 
-    ax.imshow(potential, cmap="hot", origin="lower")
+    for t in range(STEPS):
+        potential *= DECAY
+        for agent in agents:
+            agent.step(potential, agents)
 
-    ys = [a.y for a in agents]
-    xs = [a.x for a in agents]
-    ax.scatter(xs, ys, c="cyan", s=30)
+    return entropy(potential)
 
-    ax.set_title(f"Step {step}")
-    ax.set_xticks([])
-    ax.set_yticks([])
+# =======================
+# alpha sweep
+# =======================
 
-    plt.pause(0.01)
+alphas = np.linspace(0.5, 300, 25)
+Hs = []
 
-plt.show()
+for a in alphas:
+    vals = []
+    for s in range(3):
+        vals.append(run_sim(a,seed=s))
+    Hs.append(np.mean(vals))
 
-plt.savefig("final_result.png", dpi=200, bbox_inches="tight")
+# =======================
+# plot
+# =======================
+
+plt.plot(alphas, Hs, marker="o")
+plt.xlabel("Alpha")
+plt.ylabel("Entropy")
+plt.title("Entropy vs Alpha")
+
+plt.tight_layout()
+plt.savefig("entropy_vs_alpha.png", dpi=200)
+plt.close()
