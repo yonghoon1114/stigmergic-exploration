@@ -11,7 +11,9 @@ STEPS = 200
 DECAY = 1
 N = 10   # agent count 고정
 OBSTACLE_RATIO = 0.2  # 장애물 비율
-
+RUNS_PER_PAIR = 10  # seeds per (alpha,beta) pair
+ALPHA_SAMPLES = 8
+BETA_SAMPLES = 8
 def entropy(potential):
     p = potential.flatten()
     p = p / np.sum(p)
@@ -79,33 +81,54 @@ target_pos = (target_y, target_x)
 print(f"Map created with {np.sum(map_grid)} obstacles ({np.sum(map_grid)/(WIDTH*HEIGHT)*100:.1f}%)")
 print(f"Target position: {target_pos}")
 
-# alpha-beta sweep (2D)
-alphas = np.linspace(0.5, 40, 10)
-betas = np.linspace(0.5, 40, 10)
+# alpha-beta sweep (2D) -- reduced resolution for speed
+alphas = np.linspace(0.5, 25, ALPHA_SAMPLES)
+betas = np.linspace(0.5, 25, BETA_SAMPLES)
 
-Hs = np.zeros((len(betas), len(alphas)))
+Hs = np.zeros((len(betas), len(alphas)), dtype=np.float32)
+times = np.zeros_like(Hs)
+total_pairs = len(alphas) * len(betas)
+completed_pairs = 0
+cumulative_time = 0.0
 
 for i, b in enumerate(betas):
     for j, a in enumerate(alphas):
         vals = []
-        for s in range(10):
+        t0 = time.perf_counter()
+        for s in range(RUNS_PER_PAIR):
             result = run_sim(a, b, map_grid=map_grid, target_pos=target_pos, seed=s)
             vals.append(result)
         Hs[i, j] = np.mean(vals)
+        elapsed = time.perf_counter() - t0
+        times[i, j] = elapsed
+        # update progress counters and print a concise ETA line
+        completed_pairs += 1
+        cumulative_time += elapsed
+        avg_time = cumulative_time / completed_pairs
+        remaining = total_pairs - completed_pairs
+        eta_seconds = remaining * avg_time
+        pct = completed_pairs / total_pairs * 100
+        print(f"Progress {completed_pairs}/{total_pairs} ({pct:.1f}%) a={a:.2f} b={b:.2f} time={elapsed:.2f}s eta~{eta_seconds/60:.1f}min", flush=True)
 
-# plot heatmap with text annotations
+# plot heatmap (use sampled indices; tick labels show actual alpha/beta values)
 plt.figure(figsize=(12, 8))
-im = plt.imshow(Hs, extent=[alphas.min(), alphas.max(), betas.min(), betas.max()],
-                aspect='auto', origin='lower', cmap='viridis')
+im = plt.imshow(Hs, aspect='auto', origin='lower', cmap='viridis')
 plt.colorbar(im, label='Steps to Goal')
 
-# 각 셀에 숫자 표시
-for i in range(len(betas)):
-    for j in range(len(alphas)):
-        plt.text(alphas[j], betas[i], f'{Hs[i, j]:.1f}',
-                ha='center', va='center', color='white', fontsize=14, weight='bold',
-                bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.6, edgecolor='none'))
+# helper to select tick positions and labels (max 10 ticks)
+def _ticks_and_labels(arr, max_ticks=10):
+    n = len(arr)
+    if n <= max_ticks:
+        idx = np.arange(n)
+    else:
+        idx = np.linspace(0, n - 1, max_ticks, dtype=int)
+    labels = [f"{arr[k]:.1f}" for k in idx]
+    return idx, labels
 
+xticks, xticklabels = _ticks_and_labels(alphas)
+yticks, yticklabels = _ticks_and_labels(betas)
+plt.xticks(xticks, xticklabels, rotation=45)
+plt.yticks(yticks, yticklabels)
 plt.xlabel("Alpha")
 plt.ylabel("Beta")
 plt.title("Goal Reach Time vs Alpha and Beta")
@@ -114,6 +137,39 @@ plt.savefig("goal_reach_time_alpha_beta.png", dpi=200)
 plt.close()
 
 print("Heatmap saved: goal_reach_time_alpha_beta.png")
+
+# Save results as CSV (long format)
+import csv
+with open('results.csv', 'w', newline='') as f:
+    writer = csv.writer(f)
+    writer.writerow(['alpha', 'beta', 'mean_steps', 'time_sec'])
+    for i, b in enumerate(betas):
+        for j, a in enumerate(alphas):
+            writer.writerow([f"{a:.6f}", f"{b:.6f}", f"{Hs[i,j]:.6f}", f"{times[i,j]:.6f}"])
+
+# Save a PNG table (rows: beta, cols: alpha) for quick visual lookup
+fig, ax = plt.subplots(figsize=(max(8, ALPHA_SAMPLES * 0.6), max(6, BETA_SAMPLES * 0.4)))
+ax.axis('off')
+cell_text = [[f"{v:.1f}" for v in row] for row in Hs]
+row_labels = [f"{b:.1f}" for b in betas]
+col_labels = [f"{a:.1f}" for a in alphas]
+the_table = ax.table(cellText=cell_text, rowLabels=row_labels, colLabels=col_labels, loc='center')
+the_table.auto_set_font_size(False)
+the_table.set_fontsize(8)
+the_table.scale(1, 1.2)
+plt.title('Mean Steps Table (rows: beta, cols: alpha)')
+plt.tight_layout()
+plt.savefig('results_table.png', dpi=200)
+plt.close()
+
+print('Results saved: results.csv, results_table.png')
+
+# 저장: 배열로 결과 확인 가능하게 함
+np.save("Hs.npy", Hs)
+np.save("alphas.npy", alphas)
+np.save("betas.npy", betas)
+np.save("times.npy", times)
+print("Arrays saved: Hs.npy, alphas.npy, betas.npy, times.npy")
 
 # =======================
 # 맵 시각화
