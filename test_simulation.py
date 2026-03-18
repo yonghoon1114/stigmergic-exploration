@@ -8,7 +8,7 @@ from map_generator import generate_map, get_valid_position, set_obstacles_on_pot
 WIDTH = 50
 HEIGHT = 50
 NUM_AGENTS = 10
-STEPS = 400
+STEPS = 200
 DECAY = 1
 OBSTACLE_RATIO = 0.2
 
@@ -79,7 +79,7 @@ ani = animation.FuncAnimation(
     interval=50
 )
 
-output_filename = f"test_simulation_alpha{ALPHA}_beta{BETA}.gif"
+output_filename = f"test_simulation_alpha{ALPHA}_beta{BETA}_2.gif"
 ani.save(output_filename, writer="pillow", dpi=150)
 
 plt.close()
